@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import AdminOrdersTable from "@/components/admin/AdminOrdersTable";
 import ActiveVisitorSimulator from "@/components/admin/ActiveVisitorSimulator";
 
-// JİLET EMİR: Vercel bu sayfayı sakın es geçmesin, zorla derlesin!
 export const dynamic = 'force-dynamic';
 
 interface DashboardStats {
@@ -20,24 +19,24 @@ interface DashboardStats {
   profitPerOrder: number;
 }
 
+const EMPTY_STATS: DashboardStats = {
+  todayOrders: 0,
+  pendingCargo: 0,
+  monthlyRevenue: 0,
+  totalOrders: 0,
+  totalRevenue: 0,
+  totalVisits: 0,
+  netProfitTotal: 0,
+  netProfitToday: 0,
+  netProfitMonthly: 0,
+  profitPerOrder: 250,
+};
+
 export default function AdminDashboard() {
   const router = useRouter();
-  // AI çakallık yapıp boş ekranda bekletmesin diye varsayılan olarak sahte esnaf verileri yüklüyoruz!
-  const [stats, setStats] = useState<DashboardStats | null>({
-    todayOrders: 5,
-    pendingCargo: 3,
-    monthlyRevenue: 45000,
-    totalOrders: 120,
-    totalRevenue: 240000,
-    totalVisits: 1450,
-    netProfitTotal: 85000,
-    netProfitToday: 1250,
-    netProfitMonthly: 18500,
-    profitPerOrder: 250
-  });
-  const [loading, setLoading] = useState(false); // Yükleniyor takıntısını bitirdik.
+  const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
+  const [loading, setLoading] = useState(true);
 
-  // API bağlantısını şimdilik arka planda sessize alıyoruz ki 404 fırlatıp bizi olmayan sayfaya atmasın!
   const load = () => {
     fetch("/api/admin/analytics")
       .then((r) => {
@@ -45,9 +44,26 @@ export default function AdminDashboard() {
         return null;
       })
       .then((d) => {
-        if (d) setStats(d);
+        if (d) {
+          setStats({
+            todayOrders: d.todayOrders ?? 0,
+            pendingCargo: d.pendingCargo ?? 0,
+            monthlyRevenue: d.monthlyRevenue ?? 0,
+            totalOrders: d.totalOrders ?? 0,
+            totalRevenue: d.totalRevenue ?? 0,
+            totalVisits: d.totalVisits ?? 0,
+            netProfitTotal: d.totalProfitOrders ?? 0,
+            netProfitToday: d.todayProfitOrders ?? 0,
+            netProfitMonthly: d.monthlyProfitOrders ?? 0,
+            profitPerOrder: d.profitPerOrder ?? 250,
+          });
+        }
+        setLoading(false);
       })
-      .catch((err) => console.log("API henüz canlıda hazır değil:", err));
+      .catch((err) => {
+        console.log("API henüz canlıda hazır değil:", err);
+        setLoading(false);
+      });
   };
 
   useEffect(() => {
@@ -56,7 +72,7 @@ export default function AdminDashboard() {
     return () => clearInterval(id);
   }, []);
 
-  if (!stats) return <div className="text-gray-400 text-center mt-20">Veriler yükleniyor...</div>;
+  if (loading) return <div className="text-gray-400 text-center mt-20">Veriler yükleniyor...</div>;
 
   return (
     <div className="space-y-8 p-6 bg-black min-h-screen">
