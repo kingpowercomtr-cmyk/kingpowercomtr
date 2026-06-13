@@ -1,0 +1,108 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { requireAdmin } from "@/lib/admin-auth";
+import { STATUS_LABELS, ORDER_STATUS_VALUES } from "@/lib/order-status";
+
+export async function GET(req: NextRequest) {
+  if (!(await requireAdmin())) {
+    return NextResponse.json({ error: "Yetkisiz erişim." }, { status: 401 });
+  }
+
+  const page = parseInt(req.nextUrl.searchParams.get("page") || "1", 10);
+  const limit = parseInt(req.nextUrl.searchParams.get("limit") || "50", 10);
+  const status = req.nextUrl.searchParams.get("status");
+  const exportCsv = req.nextUrl.searchParams.get("export") === "csv";
+
+  const where = status ? { status } : {};
+
+  if (exportCsv) {
+    const orders = await prisma.order.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+    });
+
+    const header = [
+      "Sipariş Kodu",
+      "Ad Soyad",
+      "Telefon",
+      "Şehir",
+      "İlçe",
+      "Adres",
+      "Paket",
+      "Tutar",
+      "Ödeme",
+      "Durum",
+      "Kargo Firması",
+      "Takip Kodu",
+      "Tarih",
+    ];
+
+    const rows = orders.map((o) => [
+      o.code,
+      o.fullName,
+      o.phone,
+      o.city,
+      o.district,
+      o.address.replace(/\n/g, " "),
+      o.packageLabel,
+      String(o.price),
+      o.paymentType === "nakit" ? "Kapıda Nakit" : "Kapıda Kart",
+      STATUS_LABELS[o.status] || o.status,
+      o.cargoCompany || "",
+      o.trackingCode || "",
+      new Date(o.createdAt).toLocaleString("tr-TR"),
+    ]);
+
+    const csv = [header, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+
+    return new NextResponse("\uFEFF" + csv, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="kingpower-siparisler-${new Date().toISOString().slice(0, 10)}.csv"`,
+      },
+    });
+  }
+
+  const [orders, total] = await Promise.all([
+    prisma.order.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.order.count({ where }),
+  ]);
+
+  return NextResponse.json({ orders, total, page, limit });
+}
+
+export async function POST(req: NextRequest) {
+  if (!(await requireAdmin())) {
+    return NextResponse.json({ error: "Yetkisiz erişim." }, { status: 401 });
+  }
+
+  try {
+    const body = await req.json();
+    const { status, ...orderData } = body;
+
+    if (status && !ORDER_STATUS_VALUES.includes(status)) {
+      return NextResponse.json({ error: "Geçersiz durum." }, { status: 400 });
+    }
+
+    // Hata veren dış fonksiyon yerine doğrudan veritabanına kayıt atıyoruz kral
+    const order = await prisma.order.create({
+      data: {
+        ...orderData,
+        status: status || "beklemede",
+        code: orderData.code || `KP-${Math.floor(100000 + Math.random() * 900000)}`
+      }
+    });
+
+    return NextResponse.json({ success: true, order });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Sipariş eklenemedi.";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
