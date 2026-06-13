@@ -22,7 +22,7 @@ const nextConfig = {
       };
     }
     config.module.rules.push({
-      test: /\.md$/,
+      test: /\.(md|node)$/,
       use: 'ignore-loader',
     });
     return config;
