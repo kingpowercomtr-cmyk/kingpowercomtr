@@ -36,11 +36,9 @@ export async function POST(req: NextRequest) {
     if (!fullName?.trim() || !phone?.trim() || !city || !district?.trim() || !address?.trim()) {
       return NextResponse.json({ error: "Tüm teslimat alanları zorunludur." }, { status: 400 });
     }
-
     if (!paymentType || !["nakit", "kart"].includes(paymentType)) {
       return NextResponse.json({ error: "Geçerli bir ödeme türü seçin." }, { status: 400 });
     }
-
     if (!isValidTurkishMobile(phone)) {
       return NextResponse.json({ error: "Telefon 10 haneli olmalı ve 5 ile başlamalıdır." }, { status: 400 });
     }
@@ -51,23 +49,18 @@ export async function POST(req: NextRequest) {
     }
 
     let code = generateOrderCode();
-    let exists = await db.execute({ sql: "SELECT id FROM \"Order\" WHERE code = ?", args: [code] });
+    let exists = await db.execute({ sql: `SELECT id FROM "Order" WHERE code = ?`, args: [code] });
     while (exists.rows.length > 0) {
       code = generateOrderCode();
-      exists = await db.execute({ sql: "SELECT id FROM \"Order\" WHERE code = ?", args: [code] });
+      exists = await db.execute({ sql: `SELECT id FROM "Order" WHERE code = ?`, args: [code] });
     }
 
-    const result = await db.execute({
-      sql: `INSERT INTO "Order" (code, fullName, phone, city, district, address, paymentType, packageType, packageLabel, price, status, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'yeni_siparis', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    await db.execute({
+      sql: `INSERT INTO "Order" (code, fullName, phone, city, district, address, paymentType, packageType, packageLabel, price, status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'yeni_siparis', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
       args: [code, fullName.trim(), normalizePhone(phone), city, district.trim(), address.trim(), paymentType, pkg.key, pkg.packageLabel, pkg.price],
     });
 
-    return NextResponse.json({
-      success: true,
-      code,
-      order: { code, fullName, packageLabel: pkg.packageLabel, price: pkg.price, paymentType },
-    });
+    return NextResponse.json({ success: true, code, order: { code, fullName, packageLabel: pkg.packageLabel, price: pkg.price, paymentType } });
   } catch (err) {
     console.error("POST /api/orders error:", err);
     return NextResponse.json({ error: "Sipariş oluşturulamadı." }, { status: 500 });

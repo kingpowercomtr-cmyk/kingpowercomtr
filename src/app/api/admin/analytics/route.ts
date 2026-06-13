@@ -1,82 +1,51 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
 import { PENDING_CARGO_STATUSES } from "@/lib/order-status";
 import { PROFIT_PER_ORDER } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
-const notRefunded = { status: { not: "iade" as const } };
-
 export async function GET() {
-  // Vercel derleme (build) yaparken veritabanı olmadığı için buraya çarpıp çökmesin diye esnaf filtresi
-  if (process.env.NEXT_PHASE === "phase-production-build") {
-    return NextResponse.json({
-      totalOrders: 0, totalRevenue: 0, todayOrders: 0, pendingCargo: 0,
-      monthlyRevenue: 0, monthlyOrderCount: 0, totalProfitOrders: 0,
-      todayProfitOrders: 0, monthlyProfitOrders: 0, ordersByStatus: [],
-      ordersByPackage: [], totalVisits: 0, eventCounts: [], recentOrders: []
-    });
-  }
-
   if (!(await requireAdmin())) {
     return NextResponse.json({ error: "Yetkisiz erişim." }, { status: 401 });
   }
 
   try {
     const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const pendingStatuses = PENDING_CARGO_STATUSES.map(() => "?").join(",");
 
-    const [
-      totalOrders,
-      totalRevenueResult,
-      todayOrders,
-      pendingCargo,
-      monthlyRevenueResult,
-      monthlyOrderCount,
-      totalProfitOrders,
-      todayProfitOrders,
-      monthlyProfitOrders,
-      ordersByStatus,
-      ordersByPackage,
-      totalVisits,
-    ] = await Promise.all([
-      prisma.order.count(),
-      prisma.order.aggregate({ where: notRefunded, _sum: { price: true } }),
-      prisma.order.count({ where: { createdAt: { gte: startOfToday }, ...notRefunded } }),
-      prisma.order.count({ where: { status: { in: PENDING_CARGO_STATUSES } } }),
-      prisma.order.aggregate({
-        where: { createdAt: { gte: startOfMonth }, ...notRefunded },
-        _sum: { price: true },
-      }),
-      prisma.order.count({ where: { createdAt: { gte: startOfMonth }, ...notRefunded } }),
-      prisma.order.count({ where: notRefunded }),
-      prisma.order.count({ where: { createdAt: { gte: startOfToday }, ...notRefunded } }),
-      prisma.order.count({ where: { createdAt: { gte: startOfMonth }, ...notRefunded } }),
-      prisma.order.groupBy({  by: ["status"], _count: true }),
-      prisma.order.groupBy({ by: ["packageType"], _count: true, _sum: { price: true } }),
-      prisma.visit.count(),
+    const [total, revenue, today, pending, monthRevenue, monthCount, visits, byStatus, byPackage] = await Promise.all([
+      db.execute({ sql: `SELECT COUNT(*) as c FROM "Order"`, args: [] }),
+      db.execute({ sql: `SELECT SUM(price) as s FROM "Order" WHERE status != 'iade'`, args: [] }),
+      db.execute({ sql: `SELECT COUNT(*) as c FROM "Order" WHERE createdAt >= ? AND status != 'iade'`, args: [startOfToday] }),
+      db.execute({ sql: `SELECT COUNT(*) as c FROM "Order" WHERE status IN (${pendingStatuses})`, args: PENDING_CARGO_STATUSES }),
+      db.execute({ sql: `SELECT SUM(price) as s FROM "Order" WHERE createdAt >= ? AND status != 'iade'`, args: [startOfMonth] }),
+      db.execute({ sql: `SELECT COUNT(*) as c FROM "Order" WHERE createdAt >= ? AND status != 'iade'`, args: [startOfMonth] }),
+      db.execute({ sql: `SELECT COUNT(*) as c FROM Visit`, args: [] }),
+      db.execute({ sql: `SELECT status, COUNT(*) as count FROM "Order" GROUP BY status`, args: [] }),
+      db.execute({ sql: `SELECT packageType, COUNT(*) as count, SUM(price) as total FROM "Order" GROUP BY packageType`, args: [] }),
     ]);
 
-    const totalRevenue = totalRevenueResult._sum.price || 0;
-    const monthlyRevenue = monthlyRevenueResult._sum.price || 0;
+    const totalOrders = Number((total.rows[0] as any)?.c ?? 0);
+    const totalRevenue = Number((revenue.rows[0] as any)?.s ?? 0);
+    const todayOrders = Number((today.rows[0] as any)?.c ?? 0);
+    const pendingCargo = Number((pending.rows[0] as any)?.c ?? 0);
+    const monthlyRevenue = Number((monthRevenue.rows[0] as any)?.s ?? 0);
+    const monthlyOrderCount = Number((monthCount.rows[0] as any)?.c ?? 0);
+    const totalVisits = Number((visits.rows[0] as any)?.c ?? 0);
 
     return NextResponse.json({
-      totalOrders,
-      totalRevenue,
-      todayOrders,
-      pendingCargo,
-      monthlyRevenue,
-      monthlyOrderCount,
-      totalProfitOrders: totalProfitOrders * PROFIT_PER_ORDER,
-      todayProfitOrders: todayProfitOrders * PROFIT_PER_ORDER,
-      monthlyProfitOrders: monthlyProfitOrders * PROFIT_PER_ORDER,
-      ordersByStatus,
-      ordersByPackage,
-      totalVisits,
-      eventCounts: [],
-      recentOrders: []
+      totalOrders, totalRevenue, todayOrders, pendingCargo,
+      monthlyRevenue, monthlyOrderCount,
+      totalProfitOrders: totalOrders * PROFIT_PER_ORDER,
+      todayProfitOrders: todayOrders * PROFIT_PER_ORDER,
+      monthlyProfitOrders: monthlyOrderCount * PROFIT_PER_ORDER,
+      ordersByStatus: byStatus.rows,
+      ordersByPackage: byPackage.rows,
+      totalVisits, eventCounts: [], recentOrders: []
     });
   } catch (error) {
     return NextResponse.json({ error: "Veriler alınamadı." }, { status: 500 });

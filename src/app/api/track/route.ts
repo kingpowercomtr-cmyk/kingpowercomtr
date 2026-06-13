@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { db } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,13 +10,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false }, { status: 400 });
     }
 
-    // If this is a pageview, also create/update Visit
     if (eventType === "pageview") {
       const ua = req.headers.get("user-agent") || "";
-      const ip =
-        req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-        req.headers.get("x-real-ip") ||
-        "unknown";
+      const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
 
       let browser = "Unknown", os = "Unknown", device = "Desktop";
       try {
@@ -31,24 +27,15 @@ export async function POST(req: NextRequest) {
       let parsed: Record<string, string> = {};
       try { parsed = JSON.parse(payload || "{}"); } catch {}
 
-      await prisma.visit.create({
-        data: {
-          sessionId,
-          ip,
-          userAgent: ua,
-          browser,
-          os,
-          device,
-          referrer: parsed.referrer || null,
-          utmSource: parsed.utm_source || null,
-          utmMedium: parsed.utm_medium || null,
-          utmCampaign: parsed.utm_campaign || null,
-        },
+      await db.execute({
+        sql: `INSERT INTO Visit (sessionId, ip, userAgent, browser, os, device, referrer, utmSource, utmMedium, utmCampaign, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        args: [sessionId, ip, ua, browser, os, device, parsed.referrer || null, parsed.utm_source || null, parsed.utm_medium || null, parsed.utm_campaign || null],
       });
     }
 
-    await prisma.event.create({
-      data: { sessionId, eventType, page: page || "/", payload: payload || null },
+    await db.execute({
+      sql: `INSERT INTO Event (sessionId, eventType, page, payload, createdAt) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+      args: [sessionId, eventType, page || "/", payload || null],
     });
 
     return NextResponse.json({ ok: true });

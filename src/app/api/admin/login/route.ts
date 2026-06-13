@@ -24,24 +24,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Kullanıcı adı ve şifre gereklidir." }, { status: 400 });
     }
 
-    const result = await db.execute({
-      sql: "SELECT * FROM AdminUser WHERE username = ?",
-      args: [username],
-    });
-
+    const result = await db.execute({ sql: `SELECT * FROM AdminUser WHERE username = ?`, args: [username] });
     const admin = result.rows[0] as any;
+
     if (!admin || admin.password !== hashPassword(password)) {
       return NextResponse.json({ error: "Kullanıcı adı veya şifre hatalı." }, { status: 401 });
     }
 
     const token = generateToken(username);
     const cookieStore = await cookies();
-    cookieStore.set("kp_admin_token", token, {
-      httpOnly: true,
-      path: "/",
-      maxAge: 60 * 60 * 24 * 7,
-      sameSite: "strict",
-    });
+    cookieStore.set("kp_admin_token", token, { httpOnly: true, path: "/", maxAge: 60 * 60 * 24 * 7, sameSite: "strict" });
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -51,11 +43,6 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE() {
   const cookieStore = await cookies();
-  cookieStore.set("kp_admin_token", "", {
-    httpOnly: true,
-    path: "/",
-    maxAge: 0,
-    sameSite: "strict",
-  });
+  cookieStore.set("kp_admin_token", "", { httpOnly: true, path: "/", maxAge: 0, sameSite: "strict" });
   return NextResponse.json({ success: true });
 }

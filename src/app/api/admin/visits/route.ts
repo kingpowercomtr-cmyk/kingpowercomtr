@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { db } from "@/lib/db";
 import { cookies } from "next/headers";
 import crypto from "crypto";
 
@@ -25,9 +25,12 @@ export async function GET(req: NextRequest) {
   }
   const page = parseInt(req.nextUrl.searchParams.get("page") || "1");
   const limit = 50;
-  const [visits, total] = await Promise.all([
-    prisma.visit.findMany({ orderBy: { createdAt: "desc" }, skip: (page - 1) * limit, take: limit }),
-    prisma.visit.count(),
+  const offset = (page - 1) * limit;
+
+  const [visitsResult, countResult] = await Promise.all([
+    db.execute({ sql: `SELECT * FROM Visit ORDER BY createdAt DESC LIMIT ? OFFSET ?`, args: [limit, offset] }),
+    db.execute({ sql: `SELECT COUNT(*) as count FROM Visit`, args: [] }),
   ]);
-  return NextResponse.json({ visits, total });
+
+  return NextResponse.json({ visits: visitsResult.rows, total: Number((countResult.rows[0] as any)?.count ?? 0) });
 }

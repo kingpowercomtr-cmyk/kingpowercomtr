@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
 import { ORDER_STATUS_VALUES, CARGO_COMPANIES } from "@/lib/order-status";
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!(await requireAdmin())) {
     return NextResponse.json({ error: "Yetkisiz erişim." }, { status: 401 });
   }
@@ -24,30 +21,23 @@ export async function PATCH(
     return NextResponse.json({ error: "Geçersiz durum." }, { status: 400 });
   }
 
-  if (cargoCompany) {
-    const allowed = CARGO_COMPANIES.filter(Boolean) as string[];
-    if (!allowed.includes(cargoCompany)) {
-      return NextResponse.json({ error: "Geçersiz kargo firması." }, { status: 400 });
-    }
-  }
+  const setParts: string[] = ["updatedAt = CURRENT_TIMESTAMP"];
+  const args: any[] = [];
 
-  const order = await prisma.order.update({
-    where: { id: orderId },
-    data: {
-      ...(status ? { status } : {}),
-      ...(note !== undefined ? { note } : {}),
-      ...(cargoCompany !== undefined ? { cargoCompany: cargoCompany || null } : {}),
-      ...(trackingCode !== undefined ? { trackingCode: trackingCode?.trim() || null } : {}),
-    },
-  });
+  if (status) { setParts.push("status = ?"); args.push(status); }
+  if (note !== undefined) { setParts.push("note = ?"); args.push(note); }
+  if (cargoCompany !== undefined) { setParts.push("cargoCompany = ?"); args.push(cargoCompany || null); }
+  if (trackingCode !== undefined) { setParts.push("trackingCode = ?"); args.push(trackingCode?.trim() || null); }
 
-  return NextResponse.json({ success: true, order });
+  args.push(orderId);
+
+  await db.execute({ sql: `UPDATE "Order" SET ${setParts.join(", ")} WHERE id = ?`, args });
+
+  const result = await db.execute({ sql: `SELECT * FROM "Order" WHERE id = ?`, args: [orderId] });
+  return NextResponse.json({ success: true, order: result.rows[0] });
 }
 
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!(await requireAdmin())) {
     return NextResponse.json({ error: "Yetkisiz erişim." }, { status: 401 });
   }
@@ -59,7 +49,7 @@ export async function DELETE(
   }
 
   try {
-    await prisma.order.delete({ where: { id: orderId } });
+    await db.execute({ sql: `DELETE FROM "Order" WHERE id = ?`, args: [orderId] });
     return NextResponse.json({ success: true });
   } catch {
     return NextResponse.json({ error: "Sipariş silinemedi." }, { status: 404 });
