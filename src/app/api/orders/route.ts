@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { db } from "@/lib/db";
 import { getPackage } from "@/lib/packages";
 
 const PHONE_DIGIT_LENGTH = 10;
@@ -8,7 +8,6 @@ function sanitizePhoneInput(value: string): string {
   return value.replace(/\D/g, "").slice(0, PHONE_DIGIT_LENGTH);
 }
 
-/** 10 hane, 5 ile başlar — örn. 5468823229 */
 function isValidTurkishMobile(phone: string): boolean {
   const digits = sanitizePhoneInput(phone);
   return /^5\d{9}$/.test(digits);
@@ -16,15 +15,9 @@ function isValidTurkishMobile(phone: string): boolean {
 
 function normalizePhone(phone: string): string {
   const digits = sanitizePhoneInput(phone);
-  if (digits.startsWith("90") && digits.length === 12) {
-    return `+${digits}`;
-  }
-  if (digits.startsWith("0") && digits.length === 11) {
-    return `+90${digits.slice(1)}`;
-  }
-  if (isValidTurkishMobile(digits)) {
-    return `+90${digits}`;
-  }
+  if (digits.startsWith("90") && digits.length === 12) return `+${digits}`;
+  if (digits.startsWith("0") && digits.length === 11) return `+90${digits.slice(1)}`;
+  if (isValidTurkishMobile(digits)) return `+90${digits}`;
   throw new Error("Geçersiz telefon numarası.");
 }
 
@@ -35,88 +28,48 @@ function generateOrderCode(): string {
   return `KP-${datePart}-${rand}`;
 }
 
-interface CreateOrderInput {
-  fullName: string;
-  phone: string;
-  city: string;
-  district: string;
-  address: string;
-  paymentType: string;
-  packageType: string;
-  status?: string;
-}
-
-async function createOrderRecord(input: CreateOrderInput) {
-  const { fullName, phone, city, district, address, paymentType, packageType, status } = input;
-
-  if (!fullName?.trim() || !phone?.trim() || !city || !district?.trim() || !address?.trim()) {
-    throw new Error("Tüm teslimat alanları zorunludur.");
-  }
-
-  if (!paymentType || !["nakit", "kart"].includes(paymentType)) {
-    throw new Error("Geçerli bir ödeme türü seçin.");
-  }
-
-  if (!isValidTurkishMobile(phone)) {
-    throw new Error("Telefon 10 haneli olmalı ve 5 ile başlamalıdır. Örn: 5468823229");
-  }
-
-  const pkg = getPackage(String(packageType));
-  if (!pkg) {
-    throw new Error("Geçersiz paket seçimi.");
-  }
-
-  let code = generateOrderCode();
-  let exists = await prisma.order.findUnique({ where: { code } });
-  while (exists) {
-    code = generateOrderCode();
-    exists = await prisma.order.findUnique({ where: { code } });
-  }
-
-  return prisma.order.create({
-    data: {
-      code,
-      fullName: fullName.trim(),
-      phone: normalizePhone(phone),
-      city,
-      district: district.trim(),
-      address: address.trim(),
-      paymentType,
-      packageType: pkg.key,
-      packageLabel: pkg.packageLabel,
-      price: pkg.price,
-      status: status || "yeni_siparis",
-    },
-  });
-}
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const order = await createOrderRecord(body);
+    const { fullName, phone, city, district, address, paymentType, packageType } = body;
+
+    if (!fullName?.trim() || !phone?.trim() || !city || !district?.trim() || !address?.trim()) {
+      return NextResponse.json({ error: "Tüm teslimat alanları zorunludur." }, { status: 400 });
+    }
+
+    if (!paymentType || !["nakit", "kart"].includes(paymentType)) {
+      return NextResponse.json({ error: "Geçerli bir ödeme türü seçin." }, { status: 400 });
+    }
+
+    if (!isValidTurkishMobile(phone)) {
+      return NextResponse.json({ error: "Telefon 10 haneli olmalı ve 5 ile başlamalıdır." }, { status: 400 });
+    }
+
+    const pkg = getPackage(String(packageType));
+    if (!pkg) {
+      return NextResponse.json({ error: "Geçersiz paket seçimi." }, { status: 400 });
+    }
+
+    let code = generateOrderCode();
+    let exists = await db.execute({ sql: "SELECT id FROM \"Order\" WHERE code = ?", args: [code] });
+    while (exists.rows.length > 0) {
+      code = generateOrderCode();
+      exists = await db.execute({ sql: "SELECT id FROM \"Order\" WHERE code = ?", args: [code] });
+    }
+
+    const result = await db.execute({
+      sql: `INSERT INTO "Order" (code, fullName, phone, city, district, address, paymentType, packageType, packageLabel, price, status, createdAt, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'yeni_siparis', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      args: [code, fullName.trim(), normalizePhone(phone), city, district.trim(), address.trim(), paymentType, pkg.key, pkg.packageLabel, pkg.price],
+    });
 
     return NextResponse.json({
       success: true,
-      code: order.code,
-      order: {
-        id: order.id,
-        code: order.code,
-        fullName: order.fullName,
-        packageLabel: order.packageLabel,
-        price: order.price,
-        paymentType: order.paymentType,
-      },
+      code,
+      order: { code, fullName, packageLabel: pkg.packageLabel, price: pkg.price, paymentType },
     });
   } catch (err) {
     console.error("POST /api/orders error:", err);
-    const message = err instanceof Error ? err.message : "Bilinmeyen hata";
-    const status = message.includes("zorunlu") || message.includes("Geçersiz") || message.includes("Telefon") ? 400 : 500;
-    return NextResponse.json(
-      {
-        error: status === 400 ? message : "Sipariş oluşturulamadı. Lütfen tekrar deneyin.",
-        detail: process.env.NODE_ENV === "development" && status === 500 ? message : undefined,
-      },
-      { status }
-    );
+    return NextResponse.json({ error: "Sipariş oluşturulamadı." }, { status: 500 });
   }
 }

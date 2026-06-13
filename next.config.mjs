@@ -13,10 +13,9 @@ const nextConfig = {
     missingSuspenseWithCSRBypass: true,
   },
  webpack: (config) => {
-  config.module.rules.push({
-    test: /\.md$/,
-    type: 'asset/source',
-  });
+  config.externals = [...(config.externals || []), 
+    { '@libsql/client': 'commonjs @libsql/client' }
+  ];
   return config;
   },
 };

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { db } from "@/lib/db";
 import { cookies } from "next/headers";
 import crypto from "crypto";
 
@@ -18,18 +18,18 @@ function generateToken(username: string) {
 }
 
 export async function POST(req: NextRequest) {
-  // ESNAF JİLETİ: Eğer Vercel şu an derleme yapıyorsa veritabanına dokunma, başarılı say geç!
-  if (process.env.NEXT_PHASE === "phase-production-build") {
-    return NextResponse.json({ success: true });
-  }
-
   try {
     const { username, password } = await req.json();
     if (!username || !password) {
       return NextResponse.json({ error: "Kullanıcı adı ve şifre gereklidir." }, { status: 400 });
     }
 
-    const admin = await prisma.adminUser.findUnique({ where: { username } });
+    const result = await db.execute({
+      sql: "SELECT * FROM AdminUser WHERE username = ?",
+      args: [username],
+    });
+
+    const admin = result.rows[0] as any;
     if (!admin || admin.password !== hashPassword(password)) {
       return NextResponse.json({ error: "Kullanıcı adı veya şifre hatalı." }, { status: 401 });
     }
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     cookieStore.set("kp_admin_token", token, {
       httpOnly: true,
       path: "/",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      maxAge: 60 * 60 * 24 * 7,
       sameSite: "strict",
     });
 
