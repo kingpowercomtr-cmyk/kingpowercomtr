@@ -6,13 +6,27 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // output: 'standalone',   ← YOK ARTIK
   images: {
     unoptimized: true,
   },
   experimental: {
     missingSuspenseWithCSRBypass: true,
-  }
+  },
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+      };
+    }
+    config.module.rules.push({
+      test: /\.md$/,
+      use: 'ignore-loader',
+    });
+    return config;
+  },
 };
 
 export default nextConfig;
