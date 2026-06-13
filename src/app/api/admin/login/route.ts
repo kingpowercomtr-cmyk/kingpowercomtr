@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     const result = await db.execute({ sql: `SELECT * FROM AdminUser WHERE username = ?`, args: [username] });
     const admin = result.rows[0] as any;
 
-    if (!admin || admin.password !== hashPassword(password)) {
+    if (!admin || admin.password !== password) {
       return NextResponse.json({ error: "Kullanıcı adı veya şifre hatalı." }, { status: 401 });
     }
 
