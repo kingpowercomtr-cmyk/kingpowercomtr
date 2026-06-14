@@ -11,6 +11,7 @@ import SuccessModal from "@/components/SuccessModal";
 import SiteFooter from "@/components/SiteFooter";
 import AnalyticsProvider from "@/components/AnalyticsProvider";
 import LiveOrderToast from "@/components/LiveOrderToast";
+import AnnouncementBanner from "@/components/AnnouncementBanner";
 
 export default function Home() {
   const [selectedPackage, setSelectedPackage] = useState("1");
@@ -23,6 +24,9 @@ export default function Home() {
   return (
     <AnalyticsProvider>
       <div className="min-h-screen bg-[#0a0a0a] text-white">
+        {/* Announcement Banner */}
+        <AnnouncementBanner />
+
         {/* Success Modal */}
         {successCode && (
           <SuccessModal orderCode={successCode} onClose={() => setSuccessCode(null)} />

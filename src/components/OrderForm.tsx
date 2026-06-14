@@ -26,6 +26,16 @@ export default function OrderForm({ initialPackage = DEFAULT_PACKAGE_KEY, onSucc
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [started, setStarted] = useState(false);
+  const [badgeText, setBadgeText] = useState("🔥 EN AVANTAJLI / EN ÇOK TERCİH EDİLEN");
+
+  useEffect(() => {
+    fetch("/api/settings/public", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.packageBadgeText) setBadgeText(d.packageBadgeText);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     setFormData((prev) => ({ ...prev, packageType: initialPackage }));
@@ -287,7 +297,7 @@ export default function OrderForm({ initialPackage = DEFAULT_PACKAGE_KEY, onSucc
                     >
                       {isPopular && (
                         <span className="block text-[10px] font-black uppercase tracking-wide text-orange-400 mb-1.5">
-                          🔥 EN AVANTAJLI / EN ÇOK TERCİH EDİLEN
+                          {badgeText}
                         </span>
                       )}
                       <span>
