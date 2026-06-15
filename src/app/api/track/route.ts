@@ -10,9 +10,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false }, { status: 400 });
     }
 
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
+
     if (eventType === "pageview") {
       const ua = req.headers.get("user-agent") || "";
-      const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
 
       let browser = "Unknown", os = "Unknown", device = "Desktop";
       try {
@@ -33,10 +34,18 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    await db.execute({
-      sql: `INSERT INTO Event (sessionId, eventType, page, payload, createdAt) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-      args: [sessionId, eventType, page || "/", payload || null],
-    });
+    try {
+      await db.execute({
+        sql: `INSERT INTO Event (sessionId, eventType, page, payload, ip, createdAt) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        args: [sessionId, eventType, page || "/", payload || null, ip],
+      });
+    } catch {
+      // ip kolonu henüz migrate edilmemiş olabilir - eski şema ile dene
+      await db.execute({
+        sql: `INSERT INTO Event (sessionId, eventType, page, payload, createdAt) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        args: [sessionId, eventType, page || "/", payload || null],
+      });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {

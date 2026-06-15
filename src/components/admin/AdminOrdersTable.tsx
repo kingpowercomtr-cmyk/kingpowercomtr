@@ -3,6 +3,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ORDER_STATUSES, STATUS_LABELS, CARGO_COMPANIES } from "@/lib/order-status";
 import AdminAddOrderModal from "@/components/admin/AdminAddOrderModal";
+import AdminEditOrderModal from "@/components/admin/AdminEditOrderModal";
 
 export interface AdminOrder {
   id: number;
@@ -36,6 +37,7 @@ export default function AdminOrdersTable({ showExport = true, limit = 100 }: Adm
   const [savingId, setSavingId] = useState<number | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<AdminOrder | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [drafts, setDrafts] = useState<Record<number, { cargoCompany: string; trackingCode: string }>>({});
 
@@ -278,6 +280,13 @@ export default function AdminOrdersTable({ showExport = true, limit = 100 }: Adm
                           <div className="flex flex-col gap-1.5">
                             <button
                               type="button"
+                              onClick={() => setEditingOrder(o)}
+                              className="px-2 py-1.5 text-xs font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded hover:bg-blue-500/30 whitespace-nowrap"
+                            >
+                              ✏️ Düzenle
+                            </button>
+                            <button
+                              type="button"
                               disabled={savingId === o.id}
                               onClick={() =>
                                 patchOrder(o.id, {
@@ -343,6 +352,11 @@ export default function AdminOrdersTable({ showExport = true, limit = 100 }: Adm
         open={showAddModal}
         onClose={() => setShowAddModal(false)}
         onCreated={fetchOrders}
+      />
+      <AdminEditOrderModal
+        order={editingOrder}
+        onClose={() => setEditingOrder(null)}
+        onSaved={fetchOrders}
       />
     </div>
   );

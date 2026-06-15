@@ -104,8 +104,18 @@ export default function OrderForm({ initialPackage = DEFAULT_PACKAGE_KEY, onSucc
       });
       const data = await res.json();
       if (!res.ok) {
-        setErrors({ form: data.error || "Sipariş gönderilemedi." });
-        trackFormError("form", data.error || "submit_failed");
+        if (res.status === 409 && data.duplicate) {
+          // Mükerrer sipariş - daha önce alınmış, başarı ekranını göster
+          trackFormError("form", "duplicate_order");
+          if (data.code) {
+            onSuccess(data.code);
+          } else {
+            setErrors({ form: data.error || "Siparişiniz zaten alındı." });
+          }
+        } else {
+          setErrors({ form: data.error || "Sipariş gönderilemedi." });
+          trackFormError("form", data.error || "submit_failed");
+        }
       } else {
         trackFormSubmit(formData.packageType);
         onSuccess(data.code);

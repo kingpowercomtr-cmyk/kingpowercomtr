@@ -1,36 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { cookies } from "next/headers";
-import crypto from "crypto";
-
-const ADMIN_TOKEN_SECRET = process.env.ADMIN_SECRET || "kingpower-admin-secret-2026";
-
-function verifyToken(token: string): boolean {
-  try {
-    const [payload, sig] = token.split(".");
-    const expected = crypto.createHmac("sha256", ADMIN_TOKEN_SECRET).update(payload).digest("hex");
-    return sig === expected;
-  } catch { return false; }
-}
-
-async function checkAuth(): Promise<boolean> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("kp_admin_token")?.value;
-  return !!token && verifyToken(token);
-}
+import { requireAdmin } from "@/lib/admin-auth";
 
 export async function GET(req: NextRequest) {
-  if (!(await checkAuth())) {
+  if (!(await requireAdmin())) {
     return NextResponse.json({ error: "Yetkisiz erişim." }, { status: 401 });
   }
   const page = parseInt(req.nextUrl.searchParams.get("page") || "1");
   const limit = 50;
   const offset = (page - 1) * limit;
 
-  const [visitsResult, countResult] = await Promise.all([
-    db.execute({ sql: `SELECT * FROM Visit ORDER BY createdAt DESC LIMIT ? OFFSET ?`, args: [limit, offset] }),
-    db.execute({ sql: `SELECT COUNT(*) as count FROM Visit`, args: [] }),
+  // Her IP için en son ziyaretini al (tekilleştirme) - aynı IP yenileme yapınca tekrar listede çıkmasın
+  const [visitsResult, countResult, uniqueIpResult] = await Promise.all([
+    db.execute({
+      sql: `SELECT v.* FROM Visit v
+            INNER JOIN (
+              SELECT ip, MAX(createdAt) as maxCreated
+              FROM Visit
+              GROUP BY ip
+            ) latest ON v.ip = latest.ip AND v.createdAt = latest.maxCreated
+            ORDER BY v.createdAt DESC
+            LIMIT ? OFFSET ?`,
+      args: [limit, offset],
+    }),
+    db.execute({ sql: `SELECT COUNT(DISTINCT ip) as count FROM Visit`, args: [] }),
+    db.execute({ sql: `SELECT COUNT(DISTINCT ip) as count FROM Visit`, args: [] }),
   ]);
 
-  return NextResponse.json({ visits: visitsResult.rows, total: Number((countResult.rows[0] as any)?.count ?? 0) });
+  return NextResponse.json({
+    visits: visitsResult.rows,
+    total: Number((countResult.rows[0] as any)?.count ?? 0),
+    uniqueIps: Number((uniqueIpResult.rows[0] as any)?.count ?? 0),
+  });
 }
